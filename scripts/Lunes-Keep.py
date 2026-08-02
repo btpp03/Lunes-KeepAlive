@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Optional
 
 from seleniumbase import SB
-from seleniumbase.common.exceptions import TimeoutException
+from seleniumbase.common.exceptions import TimeoutException, NoSuchElementException
 
 # ================== 配置 ==================
 BETADASH_LOGIN_URL = "https://betadash.lunes.host/login"
@@ -326,10 +326,10 @@ def handle_initial_page(sb, email: str) -> Optional[str]:
                     sb.wait_for_element_visible(sel, timeout=8)
                     logger.info(f"✅ 找到登录表单 ({sel})")
                     return "need_login"
-                except TimeoutException:
+                except (TimeoutException, NoSuchElementException):
                     continue
             raise TimeoutException("no form selector matched")
-        except TimeoutException:
+        except (TimeoutException, NoSuchElementException):
             logger.info(f"第 {wait_round + 1}/5 次等待表单超时，检查页面状态...")
             check_and_exit_on_rate_limit(sb, email)
             if is_cloudflare_interstitial(sb):
