@@ -13,19 +13,13 @@ if [ -z "$NODE_LINK" ]; then
 fi
 
 if ! command -v jq &> /dev/null; then
-  echo "[ERROR] jq 未安装，正在安装..."
-  sudo apt-get update && sudo apt-get install -y jq
+  sudo apt-get update -qq && sudo apt-get install -y -qq jq > /dev/null 2>&1
 fi
 
 command -v curl &>/dev/null && COMMAND="curl -so" || command -v wget &>/dev/null && COMMAND="wget -qO" || { red "Error: neither curl nor wget found, please install one of them." >&2; exit 1; }
 
-echo "[INFO] 获取 sing-box 最新版本..."
-latest_version=$(curl -s "https://api.github.com/repos/SagerNet/sing-box/releases" | jq -r '[.[] | select(.prerelease==false)][0].tag_name | sub("^v"; "")' 2>/dev/null || echo "")
-if [ -z "$latest_version" ] || [ "$latest_version" = "null" ]; then
-  echo "[WARN] 无法获取 sing-box 最新版本（API 限流或异常），使用 v1.13.14"
-  export latest_version=1.13.14
-fi
-echo "[INFO] 最新稳定版本: v${latest_version}"
+echo "[INFO] sing-box 版本: v1.13.7 (hardcoded)"
+latest_version=1.13.7
 
 ARCH_RAW=$(uname -m)
 case "${ARCH_RAW}" in
