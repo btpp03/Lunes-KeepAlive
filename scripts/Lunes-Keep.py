@@ -318,24 +318,41 @@ def handle_initial_page(sb, email: str) -> Optional[str]:
             return "already_logged"
 
     logger.info("等待登录表单...")
-    for wait_round in range(3):
+    form_selectors = ['input#email', 'input[name="email"]', 'input[type="email"]', 'input[placeholder*="mail"]', 'input[placeholder*="邮箱"]']
+    for wait_round in range(5):
         try:
-            sb.wait_for_element_visible('input#email', timeout=10)
-            logger.info("✅ 找到登录表单")
-            return "need_login"
+            for sel in form_selectors:
+                try:
+                    sb.wait_for_element_visible(sel, timeout=8)
+                    logger.info(f"✅ 找到登录表单 ({sel})")
+                    return "need_login"
+                except TimeoutException:
+                    continue
+            raise TimeoutException("no form selector matched")
         except TimeoutException:
-            logger.info(f"第 {wait_round + 1} 次等待表单超时，检查页面状态...")
+            logger.info(f"第 {wait_round + 1}/5 次等待表单超时，检查页面状态...")
             check_and_exit_on_rate_limit(sb, email)
             if is_cloudflare_interstitial(sb):
                 logger.info("表单等待期间出现 CF 挑战")
                 bypass_cloudflare_interstitial(sb, email, max_attempts=2)
                 time.sleep(3)
             else:
-                time.sleep(3)
+                # Try reconnect
+                logger.info("尝试重新加载页面...")
+                try:
+                    sb.uc_open_with_reconnect(BETADASH_LOGIN_URL, reconnect_time=10)
+                    time.sleep(5)
+                except:
+                    time.sleep(3)
 
     sp = screenshot_path("02-no-form")
     safe_screenshot(sb, sp)
-    logger.error("未找到登录表单")
+    # Dump page source snippet for debugging
+    try:
+        page_src = sb.get_page_source()[:500]
+        logger.error(f"未找到登录表单，页面片段: {page_src}")
+    except:
+        logger.error("未找到登录表单")
     return None
 
 
