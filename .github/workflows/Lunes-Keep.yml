@@ -61,13 +61,4 @@ jobs:
 #          path: output/screenshots/
 #          retention-days: 3
 
-      - name: 清理旧运行
-        uses: Mattraks/delete-workflow-runs@v2
-        with:
-          token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          delete_workflow_pattern: ${{ github.workflow }}
-          retain_days: 0
-          keep_minimum_runs: 3
-
 # trigger re-index
