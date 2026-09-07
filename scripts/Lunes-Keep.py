@@ -140,29 +140,42 @@ def check_and_exit_on_rate_limit(sb, email: str) -> None:
         pass
 
 
-def parse_single_account() -> tuple[str, str]:
+def parse_accounts() -> list[tuple[str, str]]:
+    """解析 LUNES 环境变量，支持每行一个账号：邮箱-----密码
+    兼容旧单账号格式（不带换行）。
+    """
     raw = os.environ.get("LUNES", "").strip()
     if not raw:
-        logger.error("未设置环境变量 LUNES，请设置 LUNES=邮箱-----密码")
+        logger.error("未设置环境变量 LUNES，请设置 LUNES=邮箱-----密码（每行一个账号）")
         sys.exit(1)
 
-    try:
-        parts = raw.split("-----")
-        if len(parts) >= 2:
-            email = parts[0].strip()
-            password = parts[1].strip()
+    accounts: list[tuple[str, str]] = []
+    lines = raw.replace("\r\n", "\n").split("\n")
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        if "-----" not in line:
+            logger.warning(f"跳过无效行（缺少分隔符 -----）: {line}")
+            continue
+        try:
+            email, password = line.split("-----", 1)
+            email = email.strip()
+            password = password.strip()
             if email and password:
+                accounts.append((email, password))
                 logger.info(f"读取到账号: {mask_email(email)}")
-                return email, password
             else:
-                logger.error("LUNES 中邮箱或密码为空")
-                sys.exit(1)
-        else:
-            logger.error(f"LUNES 格式错误，期望 '邮箱-----密码'，实际: {raw}")
-            sys.exit(1)
-    except Exception as e:
-        logger.error(f"解析 LUNES 失败: {e}")
+                logger.warning("跳过空邮箱或空密码的账号行")
+        except Exception as e:
+            logger.error(f"解析账号行失败 ({line!r}): {e}")
+
+    if not accounts:
+        logger.error(f"LUNES 中未解析到有效账号，期望每行 '邮箱-----密码'，实际: {raw}")
         sys.exit(1)
+
+    logger.info(f"共读取到 {len(accounts)} 个账号")
+    return accounts
 
 
 # ================== Cloudflare 处理 ==================
@@ -634,25 +647,57 @@ def betadash_login(
 
 # ================== 主程序 ==================
 def main():
-    email, password = parse_single_account()
+    accounts = parse_accounts()
     proxy = os.environ.get("PROXY_SERVER")
     display = setup_display()
 
+    ok_count = 0
+    fail_accounts = []
+
     try:
-        result = betadash_login(email, password, proxy, max_retries=1)
+        for email, password in accounts:
+            logger.info("")
+            logger.info(f"▶️  开始处理账号: {mask_email(email)}")
+            logger.info("")
 
-        notify_telegram(
-            email=email,
-            ok=result["success"],
-            msg=result["message"],
-            screenshot_file=result["screenshot"],
-        )
+            try:
+                result = betadash_login(email, password, proxy, max_retries=1)
 
-        if result["success"]:
-            logger.info("✅ 保活流程完成")
+                notify_telegram(
+                    email=email,
+                    ok=result["success"],
+                    msg=result["message"],
+                    screenshot_file=result["screenshot"],
+                )
+
+                if result["success"]:
+                    ok_count += 1
+                    logger.info(f"✅ 账号保活成功: {mask_email(email)}")
+                else:
+                    fail_accounts.append(email)
+                    logger.error(f"❌ 账号保活失败: {mask_email(email)} - {result['message']}")
+            except Exception as e:
+                fail_accounts.append(email)
+                logger.exception(f"账号处理异常 {mask_email(email)}: {e}")
+
+            # 账号之间留间隔，避免触发速率限制
+            if email != accounts[-1][0]:
+                logger.info("⏳ 等待 5 秒再处理下一个账号...")
+                time.sleep(5)
+
+        # 汇总
+        total = len(accounts)
+        logger.info("=" * 50)
+        logger.info(f"📊 汇总: 成功 {ok_count}/{total}")
+        if fail_accounts:
+            logger.error(f"❌ 失败账号: {[mask_email(e) for e in fail_accounts]}")
+        logger.info("=" * 50)
+
+        if ok_count == total:
+            logger.info("✅ 全部账号保活完成")
             sys.exit(0)
         else:
-            logger.error("❌ 保活失败")
+            logger.error("❌ 有账号保活失败")
             sys.exit(1)
 
     finally:
